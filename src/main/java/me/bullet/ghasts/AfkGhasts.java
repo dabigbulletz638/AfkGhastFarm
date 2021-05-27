@@ -9,8 +9,12 @@ import baritone.api.utils.RotationUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.settings.KeyBinding;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.item.EntityItem;
 import net.minecraft.entity.monster.EntityGhast;
+import net.minecraft.init.Items;
+import net.minecraft.item.ItemAppleGold;
 import net.minecraft.item.ItemSword;
+import net.minecraft.network.play.server.SPacketDisconnect;
 import net.minecraft.util.EnumHand;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
@@ -45,6 +49,7 @@ public class AfkGhasts {
 
     private BlockPos startingBlockPos;
     private final Set<EntityGhast> ghasts = new LinkedHashSet<>();
+    private final Set<EntityItem> items = new LinkedHashSet<>();
 
     public static final double RAD_TO_DEG = 180.0 / Math.PI;
 
@@ -89,6 +94,9 @@ public class AfkGhasts {
     @SubscribeEvent
     public void onUpdate(final LivingEvent.LivingUpdateEvent event) {
         if (event.getEntityLiving() == MC.player) {
+            if (MC.player.getHealth() + MC.player.getAbsorptionAmount() <= 10F) {
+                MC.player.connection.handleDisconnect(new SPacketDisconnect(new TextComponentString("Logged due to low health while farming")));
+            }
             if (this.auraToggled) {
                 for (final Entity entity : MC.world.loadedEntityList) {
                     if (entity instanceof EntityGhast) {
@@ -112,6 +120,7 @@ public class AfkGhasts {
                 return;
             }
             this.ghasts.clear();
+            this.items.clear();
             final boolean isBaritoneActive = BaritoneAPI
                     .getProvider()
                     .getPrimaryBaritone()
@@ -147,8 +156,24 @@ public class AfkGhasts {
                                 .cancelEverything();
                     }
                 }
+                if (entity instanceof EntityItem) {
+                    final EntityItem entityItem = (EntityItem) entity;
+                    if (entityItem.getItem().getItem() == Items.GHAST_TEAR) {
+                        this.items.add(entityItem);
+                        BaritoneAPI
+                                .getProvider()
+                                .getPrimaryBaritone()
+                                .getCustomGoalProcess()
+                                .setGoalAndPath(
+                                        new GoalBlock(
+                                                entityItem.getPosition().getX(), entityItem.getPosition().getY(), entityItem.getPosition().getZ()
+                                        )
+                                );
+                    }
+                }
             }
-            if (this.ghasts.isEmpty() && MC.player.getPosition() != this.startingBlockPos) {
+            if (this.ghasts.isEmpty() && this.items.isEmpty()
+                    && MC.player.getPosition() != this.startingBlockPos) {
                 if (!isBaritoneActive
                         && !MC.player.getEntityBoundingBox()
                         .intersects(new AxisAlignedBB(this.startingBlockPos))) {
